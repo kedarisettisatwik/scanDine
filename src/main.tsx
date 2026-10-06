@@ -8,7 +8,7 @@ createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <HashRouter>
       <App />
-      <Toaster position="bottom-center" toastOptions={{ duration: 3000 }} />
+      <Toaster position="top-right" toastOptions={{ duration: 4500 }} />
     </HashRouter>
   </React.StrictMode>,
 );

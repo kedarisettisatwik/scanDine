@@ -47,6 +47,7 @@ import { features, useRows, useRestaurant, millis } from "./data";
 import { Orders, OrderDetail, Menu, Profile, Notifications } from "./admin";
 import Visitor from "./Visitor";
 import Tables from "./Tables";
+import SuperAdmin from "./SuperAdmin";
 const AuthContext = createContext<User | null>(null);
 export const useOwner = () => useContext(AuthContext)!;
 export const attempt = async (fn: () => Promise<unknown>, success?: string) => {
@@ -78,6 +79,7 @@ export default function App() {
     <AuthContext.Provider value={user}>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/super-admin" element={<SuperAdmin />} />
         <Route path="/admin/login" element={<AuthPage mode="login" />} />
         <Route path="/admin/signup" element={<AuthPage mode="signup" />} />
         <Route
@@ -172,6 +174,7 @@ function Landing() {
 function AuthPage({ mode }: { mode: "login" | "signup" | "reset" }) {
   const [userBusy, setBusy] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -200,7 +203,11 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "reset" }) {
           navigate("/admin/profile");
         } else {
           await signInWithEmailAndPassword(auth, email, password);
-          navigate("/admin");
+          navigate(
+            location.state?.returnTo === "/super-admin"
+              ? "/super-admin"
+              : "/admin",
+          );
         }
       },
       mode === "reset" ? undefined : "Welcome to ScanDine",

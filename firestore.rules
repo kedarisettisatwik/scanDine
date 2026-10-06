@@ -2,6 +2,8 @@ rules_version = '2';
 service cloud.firestore {
  match /databases/{database}/documents {
   function signed(){return request.auth!=null;}
+  function platformAdmin(){return signed()&&request.auth.token.firebase.sign_in_provider!='anonymous'&&exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.enabled==true;}
+  match /platformAdmins/{uid}{allow get: if signed()&&request.auth.uid==uid;allow list,write: if false;}
   function guest(){return signed()&&request.auth.token.firebase.sign_in_provider=='anonymous';}
   function owner(rid){return signed()&&request.auth.uid==rid&&get(/databases/$(database)/documents/restaurants/$(rid)).data.ownerUid==request.auth.uid;}
   function tableValid(t){return t is string&&t.matches('^[a-zA-Z0-9-]{1,12}$');}
@@ -12,7 +14,7 @@ service cloud.firestore {
   function sum(l){return amount(l,0)+amount(l,1)+amount(l,2)+amount(l,3)+amount(l,4)+amount(l,5);}
   function locked(rid,oid,d){let t=getAfter(/databases/$(database)/documents/restaurants/$(rid)/tables/$(d.tableNumber)).data;return t.orderId==oid&&t.guestUid==request.auth.uid&&t.sessionId==d.sessionId;}
   match /restaurants/{rid}{
-   allow get: if true;allow list: if false;
+   allow get: if true;allow list: if platformAdmin();
    allow create: if signed()&&!guest()&&rid==request.auth.uid&&request.resource.data.ownerUid==request.auth.uid&&request.resource.data.name is string&&request.resource.data.name.size()>0;
    allow update: if owner(rid)&&request.resource.data.ownerUid==resource.data.ownerUid&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.bannerImages.size()<=8;
    match /categories/{id}{allow read: if true;allow create,update: if owner(rid)&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.name.size()<=60;allow delete: if owner(rid);}
@@ -44,7 +46,7 @@ service cloud.firestore {
     allow update: if(owner(rid)&&resource.data.status=='pending'&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])&&request.resource.data.status in ['approved','rejected'])||(validJoin()&&request.time>=resource.data.updatedAt+duration.value(60,'s'));
    }
    match /orders/{oid}{
-    allow read: if owner(rid)||(signed()&&resource.data.guestUid==request.auth.uid);
+    allow read: if platformAdmin()||owner(rid)||(signed()&&resource.data.guestUid==request.auth.uid);
     allow create: if guest()&&validSession(rid,request.resource.data)&&request.resource.data.keys().hasOnly(['guestUid','sessionId','tableNumber','status','items','addedItems','total','createdAt','updatedAt'])&&request.resource.data.guestUid==request.auth.uid&&tableValid(request.resource.data.tableNumber)&&request.resource.data.status=='pending'&&request.resource.data.createdAt==request.time&&request.resource.data.updatedAt==request.time&&request.resource.data.items==request.resource.data.addedItems&&lines(rid,request.resource.data.addedItems,false)&&request.resource.data.total==sum(request.resource.data.addedItems)&&locked(rid,oid,request.resource.data);
     allow update: if owner(rid)||(guest()&&validSession(rid,request.resource.data)&&resource.data.guestUid==request.auth.uid&&resource.data.status=='pending'&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items','addedItems','total','updatedAt'])&&request.resource.data.updatedAt==request.time&&request.resource.data.items.size()<=200&&request.resource.data.items==resource.data.items.concat(request.resource.data.addedItems)&&lines(rid,request.resource.data.addedItems,true)&&request.resource.data.total==resource.data.total+sum(request.resource.data.addedItems)&&locked(rid,oid,request.resource.data));
    }
