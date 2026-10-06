@@ -14,6 +14,7 @@ import {
 import { auth, db } from "./firebase";
 import { useOwner, attempt } from "./App";
 import { averagePerDay } from "./platformMetrics";
+import ClientReviews from "./ClientReviews";
 type Stats = { id: string; name: string; orders: number; first: number | null };
 export default function SuperAdmin() {
   const user = useOwner();
@@ -99,6 +100,7 @@ export default function SuperAdmin() {
           Sign out
         </button>
       </header>
+      {allowed && <ClientReviews restaurants={rows} />}
       {busy ? (
         <div className="empty">Loading platform statistics…</div>
       ) : error ? (

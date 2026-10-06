@@ -36,6 +36,7 @@ vi.mock("firebase/firestore", () => ({
   },
 }));
 import { placeOrder } from "./data";
+import { saveClient } from "./clientData";
 import {
   joinTable,
   approveTable,
@@ -54,6 +55,48 @@ const dish = {
 };
 const access = { tableNumber: "5", sessionId: "approved-session-0001" };
 const p = (name: string, id: string) => `${base}/${name}/${id}`;
+describe("Client onboarding", () => {
+  const details = {
+    clientName: "Owner",
+    phone: "+919876543210",
+    address: "12 Main Street",
+    location: "Hyderabad",
+  };
+  beforeEach(() => state.docs.clear());
+  it("blocks initial access and queues a review", async () => {
+    await saveClient("owner", details);
+    expect(state.docs.get("clients/owner")).toMatchObject({
+      ...details,
+      approved: false,
+      reviewPending: true,
+    });
+  });
+  it("flags edits without overriding the team approval decision", async () => {
+    state.docs.set("clients/owner", {
+      ...details,
+      approved: true,
+      reviewPending: false,
+    });
+    await saveClient("owner", { ...details, phone: "+919999999999" });
+    expect(state.docs.get("clients/owner")).toMatchObject({
+      approved: true,
+      reviewPending: true,
+      phone: "+919999999999",
+    });
+  });
+  it("keeps suspended accounts blocked when details are corrected", async () => {
+    state.docs.set("clients/owner", {
+      ...details,
+      approved: false,
+      reviewPending: false,
+    });
+    await saveClient("owner", { ...details, clientName: "Corrected owner" });
+    expect(state.docs.get("clients/owner")).toMatchObject({
+      approved: false,
+      reviewPending: true,
+    });
+  });
+});
 function approveSeed() {
   state.docs.set(p("tables", "5"), {
     ...access,

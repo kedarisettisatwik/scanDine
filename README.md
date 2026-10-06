@@ -28,6 +28,10 @@ These console settings and rules have not been applied to your cloud project aut
 
 ## Owner workflow
 
+Owners must submit client name, phone number, address and location before accessing the dashboard. Private `clients/{OWNER_UID}` documents store these details, `approved` (initially false), and `reviewPending`. Super-admin's live Client reviews section shows new submissions and edits, with approval and suspension controls. Approved owners can edit details in Profile; edits keep the current approval but notify the team for review. Restaurant name changes also queue a review. Revoking approval closes the dashboard immediately. Only platform admins can change approval, enforced by Firestore rules.
+
+Publish the updated Firestore rules with this release. Existing owners without a client document must also complete onboarding and receive approval. Client details are readable only by that owner and platform admins; they are not stored in the publicly readable restaurant document. Review flags persist while the super-admin is offline; live alerts appear while the review dashboard is open.
+
 - Sign up, log in, reset password, and protected admin pages.
 - Profile: restaurant name, logo URL, banner URLs, category create/rename/delete, enabled services and custom services.
 - Add menu items with name, description, veg/non-veg, price, multiple categories, up to three image URLs, and availability.

@@ -47,6 +47,8 @@ import { features, useRows, useRestaurant, millis } from "./data";
 import { Orders, OrderDetail, Menu, Profile, Notifications } from "./admin";
 import Visitor from "./Visitor";
 import ViewOrder from "./ViewOrder";
+import ClientAccess from "./ClientAccess";
+import ContactFooter from "./ContactFooter";
 import Tables from "./Tables";
 import SuperAdmin from "./SuperAdmin";
 const AuthContext = createContext<User | null>(null);
@@ -91,7 +93,9 @@ export default function App() {
           path="/admin"
           element={
             user && !user.isAnonymous ? (
-              <AdminShell />
+              <ClientAccess>
+                <AdminShell />
+              </ClientAccess>
             ) : (
               <Navigate to="/admin/login" replace />
             )
@@ -202,7 +206,7 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "reset" }) {
             features,
             createdAt: serverTimestamp(),
           });
-          navigate("/admin/profile");
+          navigate("/admin");
         } else {
           await signInWithEmailAndPassword(auth, email, password);
           navigate(
@@ -308,6 +312,7 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "reset" }) {
             {mode === "reset" ? "Back to login" : "Forgot password?"}
           </Link>
         </div>
+        <ContactFooter />
       </section>
     </div>
   );
@@ -475,6 +480,7 @@ function AdminShell() {
             </section>
           )}
         </main>
+        <ContactFooter />
       </div>
     </div>
   );

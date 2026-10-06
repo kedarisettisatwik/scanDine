@@ -5,7 +5,25 @@ service cloud.firestore {
   function platformAdmin(){return signed()&&request.auth.token.firebase.sign_in_provider!='anonymous'&&exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.enabled==true;}
   match /platformAdmins/{uid}{allow get: if signed()&&request.auth.uid==uid;allow list,write: if false;}
   function guest(){return signed()&&request.auth.token.firebase.sign_in_provider=='anonymous';}
-  function owner(rid){return signed()&&request.auth.uid==rid&&get(/databases/$(database)/documents/restaurants/$(rid)).data.ownerUid==request.auth.uid;}
+  function account(rid){return signed()&&!guest()&&request.auth.uid==rid&&get(/databases/$(database)/documents/restaurants/$(rid)).data.ownerUid==request.auth.uid;}
+  function owner(rid){return account(rid)&&get(/databases/$(database)/documents/clients/$(rid)).data.approved==true;}
+  match /clients/{rid}{
+   allow get: if platformAdmin()||(signed()&&!guest()&&request.auth.uid==rid);
+   allow list: if platformAdmin();
+   function details(d){return d.clientName is string&&d.clientName.size()>0&&d.clientName.size()<=100
+    &&d.phone is string&&d.phone.matches('^[+0-9 ()-]{7,25}$')
+    &&d.address is string&&d.address.size()>0&&d.address.size()<=500
+    &&d.location is string&&d.location.size()>0&&d.location.size()<=200;}
+   allow create: if account(rid)&&details(request.resource.data)
+    &&request.resource.data.keys().hasOnly(['clientName','phone','address','location','approved','reviewPending','createdAt','updatedAt'])
+    &&request.resource.data.approved==false&&request.resource.data.reviewPending==true
+    &&request.resource.data.createdAt==request.time&&request.resource.data.updatedAt==request.time;
+   allow update: if (account(rid)&&details(request.resource.data)
+    &&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientName','phone','address','location','reviewPending','updatedAt'])
+    &&request.resource.data.reviewPending==true&&request.resource.data.updatedAt==request.time)
+    ||(platformAdmin()&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved','reviewPending','reviewedAt'])
+    &&request.resource.data.approved is bool&&request.resource.data.reviewPending==false&&request.resource.data.reviewedAt==request.time);
+  }
   function tableValid(t){return t is string&&t.matches('^[a-zA-Z0-9-]{1,12}$');}
   function validSession(rid,d){let t=get(/databases/$(database)/documents/restaurants/$(rid)/tables/$(d.tableNumber)).data;return guest()&&t.guestUid==request.auth.uid&&t.sessionId==d.sessionId;}
   function line(rid,x,addon){let m=get(/databases/$(database)/documents/restaurants/$(rid)/menuItems/$(x.itemId)).data;return x.keys().hasOnly(['itemId','name','price','type','qty','addedAt','isAddon'])&&m.available==true&&x.name==m.name&&x.price==m.price&&x.type==m.type&&x.qty is int&&x.qty>0&&x.qty<=99&&x.addedAt is number&&x.isAddon==addon;}
@@ -28,8 +46,9 @@ service cloud.firestore {
   }
   match /restaurants/{rid}{
    allow get: if true;allow list: if platformAdmin();
-   allow create: if signed()&&!guest()&&rid==request.auth.uid&&request.resource.data.ownerUid==request.auth.uid&&request.resource.data.name is string&&request.resource.data.name.size()>0;
-   allow update: if owner(rid)&&request.resource.data.ownerUid==resource.data.ownerUid&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.bannerImages.size()<=8;
+   allow create: if signed()&&!guest()&&rid==request.auth.uid&&request.resource.data.keys().hasOnly(['name','ownerUid','logoUrl','bannerImages','features','createdAt'])&&request.resource.data.ownerUid==request.auth.uid&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.name.size()<=100;
+   allow update: if owner(rid)&&request.resource.data.ownerUid==resource.data.ownerUid&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','logoUrl','bannerImages','features'])&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.name.size()<=100&&request.resource.data.bannerImages.size()<=8
+    &&(request.resource.data.name==resource.data.name||(getAfter(/databases/$(database)/documents/clients/$(rid)).data.reviewPending==true&&getAfter(/databases/$(database)/documents/clients/$(rid)).data.updatedAt==request.time));
    match /categories/{id}{allow read: if true;allow create,update: if owner(rid)&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.name.size()<=60;allow delete: if owner(rid);}
    match /menuItems/{id}{allow read: if true;allow create,update: if owner(rid)&&request.resource.data.name is string&&request.resource.data.name.size()>0&&request.resource.data.price is number&&request.resource.data.price>=0&&request.resource.data.images is list&&request.resource.data.images.size()<=3&&request.resource.data.type in ['veg','nonveg']&&request.resource.data.available is bool&&request.resource.data.categoryIds is list;allow delete: if owner(rid);}
    match /tableConfigs/{table}{allow get: if true;allow list: if owner(rid);allow create,update: if owner(rid)&&tableValid(table)&&request.resource.data.keys().hasOnly(['tableNumber','updatedAt'])&&request.resource.data.tableNumber==table&&request.resource.data.updatedAt==request.time;}

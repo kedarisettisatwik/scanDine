@@ -32,6 +32,7 @@ import {
 } from "./data";
 import { useOwner, attempt } from "./App";
 import { releaseTable } from "./tableAccess";
+import { ClientForm, useClient } from "./ClientAccess";
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div className="empty">
@@ -753,6 +754,7 @@ export function Profile() {
   const u = useOwner(),
     { restaurant: r } = useRestaurant(u.uid),
     { rows: categories } = useRows(u.uid, "categories");
+  const { client, error: clientError } = useClient(u.uid);
   const [banners, setBanners] = useState<string[]>([]),
     [name, setName] = useState(""),
     [logo, setLogo] = useState(""),
@@ -793,20 +795,37 @@ export function Profile() {
     <div className="profile-grid">
       <div>
         <section className="panel">
+          <h2>Client details</h2>
+          <p>
+            Changes notify the team for review. The team may suspend access if
+            details need correcting.
+          </p>
+          {clientError ? (
+            <div className="error">{clientError}</div>
+          ) : (
+            <ClientForm client={client} />
+          )}
+        </section>
+        <section className="panel">
           <h2>Restaurant details</h2>
           <p>Make the menu feel like your restaurant.</p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              attempt(
-                () =>
-                  updateDoc(doc(db, "restaurants", u.uid), {
-                    name: name.trim(),
-                    logoUrl: logo,
-                    bannerImages: banners.filter(Boolean),
-                  }),
-                "Profile saved",
-              );
+              attempt(async () => {
+                const batch = writeBatch(db);
+                batch.update(doc(db, "restaurants", u.uid), {
+                  name: name.trim(),
+                  logoUrl: logo,
+                  bannerImages: banners.filter(Boolean),
+                });
+                if (name.trim() !== r.name)
+                  batch.update(doc(db, "clients", u.uid), {
+                    reviewPending: true,
+                    updatedAt: serverTimestamp(),
+                  });
+                await batch.commit();
+              }, "Profile saved");
             }}
           >
             <label>
