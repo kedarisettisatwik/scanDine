@@ -1164,6 +1164,11 @@ fieldset {
   border-radius: 10px;
   margin-top: 26px;
 }
+.order-page { min-height: 100vh; }
+.order-link { margin-top: 18px; }
+.order-link p { font-size: 13px; }
+.order-link input { width: 100%; min-width: 0; }
+.order-link-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .your-order .line-item {
   font-size: 12px;
 }

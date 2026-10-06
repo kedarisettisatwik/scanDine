@@ -46,6 +46,7 @@ import { auth, db } from "./firebase";
 import { features, useRows, useRestaurant, millis } from "./data";
 import { Orders, OrderDetail, Menu, Profile, Notifications } from "./admin";
 import Visitor from "./Visitor";
+import ViewOrder from "./ViewOrder";
 import Tables from "./Tables";
 import SuperAdmin from "./SuperAdmin";
 const AuthContext = createContext<User | null>(null);
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="notifications" element={<Notifications />} />
         </Route>
         <Route path="/r/:restaurantId" element={<Visitor />} />
+        <Route path="/view-order/:orderId" element={<ViewOrder />} />
         <Route
           path="*"
           element={

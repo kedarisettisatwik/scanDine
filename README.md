@@ -38,6 +38,10 @@ These console settings and rules have not been applied to your cloud project aut
 
 ## Guest workflow
 
+New orders include a copyable tracking link at `#/view-order/ORDER_ID` (using the existing HashRouter). The read-only page shows the saved restaurant name, table, quantities, item prices, total, and live dining/completion status. Anyone with the link can open it without signing in, including after table release or on another device. Guest identities and table session tokens are excluded from the public view; public order listing is denied. Orders created before this update do not receive links automatically.
+
+Publish the updated `firestore.rules` alongside the app update before taking new orders; order creation now also writes an `orderViews` document in the same transaction.
+
 Visit `#/r/RESTAURANT_ID` or `#/r/RESTAURANT_ID?table=5`. Hidden anonymous authentication keeps orders private. A separate session-based visitor auth instance allows an owner to preview the menu without logging out of the dashboard. Use one approved browser session for a dining party; another device cannot take over an active table session.
 
 Enter a table and request staff approval, then filter/search dishes, review the cart, place an order, then add more items. Up to six distinct dishes can be submitted at once; repeat submissions add more. Each quantity is capped at 99, and an order is capped at 200 lines. Staff closes the table manually after payment. Currency is INR, with no tax or payment integration. Guests cannot cancel submitted items.

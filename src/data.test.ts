@@ -74,6 +74,7 @@ describe("Approved dining sessions", () => {
   beforeEach(() => {
     state.docs.clear();
     state.counter = 0;
+    state.docs.set(base, { name: "The Green Table" });
     state.docs.set(p("tableConfigs", "5"), { tableNumber: "5" });
     approveSeed();
   });
@@ -85,6 +86,13 @@ describe("Approved dining sessions", () => {
     expect(o.sessionId).toBe(access.sessionId);
     expect(state.docs.get(p("tables", "5")).orderId).toBe("id-1");
     expect(notifications()[0].type).toBe("new_order");
+    expect(state.docs.get("orderViews/id-1")).toMatchObject({
+      restaurantName: "The Green Table",
+      tableNumber: "5",
+      total: 440,
+      status: "pending",
+    });
+    expect(state.docs.get("orderViews/id-1").guestUid).toBeUndefined();
   });
   it("appends items while retaining historical prices", async () => {
     await placeOrder(database, rid, "guest", "5", [dish], access);
@@ -101,6 +109,8 @@ describe("Approved dining sessions", () => {
     expect(o.items[0].price).toBe(220);
     expect(o.items[1].isAddon).toBe(true);
     expect(o.total).toBe(690);
+    expect(state.docs.get("orderViews/id-1").total).toBe(690);
+    expect(state.docs.get("orderViews/id-1").items).toHaveLength(2);
   });
   it("refuses orders from a different anonymous device", async () => {
     await expect(
@@ -188,6 +198,8 @@ describe("Approved dining sessions", () => {
     await placeOrder(database, rid, "guest", "5", [dish], access);
     await releaseTable(database, rid, "5", access.sessionId, [], "id-1");
     expect(state.docs.get(p("orders", "id-1")).status).toBe("completed");
+    expect(state.docs.get("orderViews/id-1").status).toBe("completed");
+    expect(state.docs.get("orderViews/id-1").total).toBe(440);
     expect(state.docs.has(p("tableOccupancy", "5"))).toBe(false);
     await expect(
       placeOrder(database, rid, "guest", "5", [dish], access),

@@ -26,6 +26,7 @@ import {
   type Row,
 } from "./data";
 import { attempt } from "./App";
+import { OrderLink } from "./ViewOrder";
 import {
   joinTable,
   useJoinRequest,
@@ -505,6 +506,27 @@ export default function Visitor() {
               <p>Try another filter or check with the staff.</p>
             </div>
           )}
+        {orders.rows.some((o) => o.trackingAvailable) && (
+          <section className="your-order">
+            <h2>Your order links</h2>
+            {orders.rows
+              .filter((o) => o.trackingAvailable)
+              .sort(
+                (a, b) =>
+                  (b.createdAt?.toMillis?.() || 0) -
+                  (a.createdAt?.toMillis?.() || 0),
+              )
+              .map((o) => (
+                <div key={o.id}>
+                  <h3>
+                    Table {o.tableNumber} ·{" "}
+                    {o.status === "completed" ? "Completed" : "Still dining"}
+                  </h3>
+                  <OrderLink orderId={o.id} />
+                </div>
+              ))}
+          </section>
+        )}
         {current && (
           <section className="your-order">
             <div className="section-title">

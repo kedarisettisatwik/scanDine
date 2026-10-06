@@ -281,6 +281,8 @@ export async function releaseTable(
       ? doc(database, `restaurants/${rid}/orders/${orderId}`)
       : null;
     const order = orderRef ? await tx.get(orderRef) : null;
+    const viewRef = orderId ? doc(database, "orderViews", orderId) : null;
+    const view = viewRef ? await tx.get(viewRef) : null;
     if (expectedOrderId && order?.data()?.status !== "pending")
       throw Error("This order is already completed.");
     if (
@@ -316,6 +318,8 @@ export async function releaseTable(
         status: "completed",
         updatedAt: serverTimestamp(),
       });
+    if (viewRef && view?.exists() && order?.data()?.status === "pending")
+      tx.update(viewRef, { status: "completed" });
     if (current.exists()) tx.delete(tableRef);
     if (occupancy.exists()) tx.delete(occupancyRef);
     snapshots.forEach(({ r, ref, lock, request, service }) => {

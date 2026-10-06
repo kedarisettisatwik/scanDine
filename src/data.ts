@@ -104,6 +104,7 @@ export async function placeOrder(
       "Please order up to 6 different dishes at a time. You can add more afterward.",
     );
   await runTransaction(database, async (tx) => {
+    const restaurant = await tx.get(doc(database, "restaurants", rid));
     await assertTableAccess(tx, database, rid, uid, table, access);
     const ls = await tx.get(lock);
     if (ls.exists() && ls.data().guestUid !== uid)
@@ -115,6 +116,8 @@ export async function placeOrder(
     const snap = active ? await tx.get(ref) : null;
     const old = snap?.data();
     const addon = old?.status === "pending";
+    const viewRef = doc(database, "orderViews", ref.id);
+    const view = await tx.get(viewRef);
     const lines = items.map((i) => ({
       ...i,
       addedAt: Date.now(),
@@ -130,12 +133,22 @@ export async function placeOrder(
       tableNumber: table,
       guestUid: uid,
       sessionId: access.sessionId,
+      ...(addon && !old.trackingAvailable ? {} : { trackingAvailable: true }),
       status: "pending",
       items: all,
       addedItems: lines,
       total,
       createdAt: addon ? old.createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
+    });
+    tx.set(viewRef, {
+      restaurantId: rid,
+      restaurantName:
+        view.data()?.restaurantName || restaurant.data()?.name || "Restaurant",
+      tableNumber: table,
+      status: "pending",
+      items: all,
+      total,
     });
     tx.update(lock, { orderId: ref.id });
     tx.set(notification, {
