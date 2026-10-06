@@ -21,12 +21,17 @@ export default function ClientReviews({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "pending">("all");
+  const [filter, setFilter] = useState<
+    "all" | "pending" | "blocked" | "granted"
+  >("all");
   const restaurantNames = new Map(restaurants.map((r) => [r.id, r.name]));
   const searchTerm = search.trim().toLocaleLowerCase();
   const visible = clients.filter(
     (client) =>
-      (filter === "all" || client.reviewPending === true) &&
+      (filter === "all" ||
+        (filter === "pending" && client.reviewPending === true) ||
+        (filter === "blocked" && client.approved !== true) ||
+        (filter === "granted" && client.approved === true)) &&
       [restaurantNames.get(client.id) || "", client.clientName || ""].some(
         (name) => name.toLocaleLowerCase().includes(searchTerm),
       ),
@@ -128,6 +133,20 @@ export default function ClientReviews({
           onClick={() => setFilter("pending")}
         >
           Pending review
+        </button>
+        <button
+          className={filter === "blocked" ? "chip selected" : "chip"}
+          aria-pressed={filter === "blocked"}
+          onClick={() => setFilter("blocked")}
+        >
+          Access blocked
+        </button>
+        <button
+          className={filter === "granted" ? "chip selected" : "chip"}
+          aria-pressed={filter === "granted"}
+          onClick={() => setFilter("granted")}
+        >
+          Access granted
         </button>
       </div>
       {!loading && !error && clients.length > 0 && (
