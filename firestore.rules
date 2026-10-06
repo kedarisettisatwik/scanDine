@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signed() { return request.auth != null; }
+  function owner(rid) { return signed() && request.auth.uid == rid && get(/databases/$(database)/documents/restaurants/$(rid)).data.ownerUid == request.auth.uid; }
+  function guest() { return signed() && request.auth.token.firebase.sign_in_provider == 'anonymous'; }
+  function tableValid(t) { return t is string && t.matches('^[a-zA-Z0-9-]{1,12}$'); }
+  function line(rid,x,addon) {
+   let m = get(/databases/$(database)/documents/restaurants/$(rid)/menuItems/$(x.itemId)).data;
+   return x.keys().hasOnly(['itemId','name','price','type','qty','addedAt','isAddon'])
+    && m.available == true && x.name == m.name && x.price == m.price && x.type == m.type
+    && x.qty is int && x.qty > 0 && x.qty <= 99 && x.addedAt is number && x.isAddon == addon;
+  }
+  function lines(rid,l,addon) {
+   return l is list && l.size() > 0 && l.size() <= 8
+    && line(rid,l[0],addon) && (l.size()<2 || line(rid,l[1],addon))
+    && (l.size()<3 || line(rid,l[2],addon)) && (l.size()<4 || line(rid,l[3],addon))
+    && (l.size()<5 || line(rid,l[4],addon)) && (l.size()<6 || line(rid,l[5],addon))
+    && (l.size()<7 || line(rid,l[6],addon)) && (l.size()<8 || line(rid,l[7],addon));
+  }
+  function amount(l,i) { return l.size()>i ? l[i].qty*l[i].price : 0; }
+  function sum(l) { return amount(l,0)+amount(l,1)+amount(l,2)+amount(l,3)+amount(l,4)+amount(l,5)+amount(l,6)+amount(l,7); }
+  function locked(rid,oid,d) {
+   let t = getAfter(/databases/$(database)/documents/restaurants/$(rid)/tables/$(d.tableNumber)).data;
+   return t.orderId == oid && t.guestUid == request.auth.uid;
+  }
+  match /restaurants/{rid} {
+   allow get: if true;
+   allow list: if false;
+   allow create: if signed() && !guest() && rid == request.auth.uid && request.resource.data.ownerUid == request.auth.uid
+     && request.resource.data.name is string && request.resource.data.name.size()>0;
+   allow update: if owner(rid) && request.resource.data.ownerUid == resource.data.ownerUid && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.bannerImages.size()<=8;
+   allow delete: if false;
+   match /categories/{id} {
+    allow read: if true;
+    allow create,update: if owner(rid) && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=60;
+    allow delete: if owner(rid);
+   }
+   match /menuItems/{id} {
+    allow read: if true;
+    allow create,update: if owner(rid) && request.resource.data.name is string && request.resource.data.name.size()>0
+     && request.resource.data.price is number && request.resource.data.price>=0 && request.resource.data.images is list
+     && request.resource.data.images.size()<=3 && request.resource.data.type in ['veg','nonveg']
+     && request.resource.data.available is bool && request.resource.data.categoryIds is list;
+    allow delete: if owner(rid);
+   }
+   match /tables/{table} {
+    allow get: if signed();
+    allow list: if owner(rid);
+    allow create: if guest() && tableValid(table) && request.resource.data.keys().hasOnly(['orderId','guestUid'])
+      && request.resource.data.guestUid == request.auth.uid
+      && getAfter(/databases/$(database)/documents/restaurants/$(rid)/orders/$(request.resource.data.orderId)).data.tableNumber == table
+      && getAfter(/databases/$(database)/documents/restaurants/$(rid)/orders/$(request.resource.data.orderId)).data.status == 'pending'
+      && getAfter(/databases/$(database)/documents/restaurants/$(rid)/orders/$(request.resource.data.orderId)).data.guestUid == request.auth.uid;
+    allow update: if guest() && resource.data.guestUid == request.auth.uid && request.resource.data == resource.data;
+    allow delete: if owner(rid);
+   }
+   match /orders/{oid} {
+    allow read: if owner(rid) || (signed() && resource.data.guestUid == request.auth.uid);
+    allow create: if guest() && request.resource.data.keys().hasOnly(['guestUid','tableNumber','status','items','addedItems','total','createdAt','updatedAt'])
+      && request.resource.data.guestUid == request.auth.uid && tableValid(request.resource.data.tableNumber)
+      && request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+      && request.resource.data.items == request.resource.data.addedItems && lines(rid,request.resource.data.addedItems,false)
+      && request.resource.data.total == sum(request.resource.data.addedItems) && locked(rid,oid,request.resource.data);
+    allow update: if owner(rid) || (guest() && resource.data.guestUid == request.auth.uid && resource.data.status == 'pending'
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items','addedItems','total','updatedAt'])
+      && request.resource.data.updatedAt == request.time && request.resource.data.items.size()<=200
+      && request.resource.data.items == resource.data.items.concat(request.resource.data.addedItems)
+      && lines(rid,request.resource.data.addedItems,true) && request.resource.data.total == resource.data.total + sum(request.resource.data.addedItems)
+      && locked(rid,oid,request.resource.data));
+    allow delete: if false;
+   }
+   match /requests/{id} {
+    allow get: if owner(rid) || (guest() && (!exists(/databases/$(database)/documents/restaurants/$(rid)/requests/$(id)) || resource.data.guestUid == request.auth.uid));
+    allow list: if owner(rid) || (guest() && resource.data.guestUid == request.auth.uid);
+    function validRequest() {
+     let d=request.resource.data;
+     return guest() && d.keys().hasOnly(['orderId','guestUid','tableNumber','featureId','featureIcon','label','status','createdAt'])
+       && d.guestUid==request.auth.uid && tableValid(d.tableNumber) && id==d.tableNumber+'_'+request.auth.uid+'_'+d.featureId
+       && d.status=='open' && d.createdAt==request.time && d.label is string && d.label.size()<=100
+       && {'id':d.featureId,'label':d.label,'icon':d.featureIcon,'enabled':true} in get(/databases/$(database)/documents/restaurants/$(rid)).data.features
+       && getAfter(/databases/$(database)/documents/restaurants/$(rid)/serviceLocks/$(d.tableNumber+'_'+d.featureId)).data.requestId==id
+       && (!exists(/databases/$(database)/documents/restaurants/$(rid)/tables/$(d.tableNumber)) || get(/databases/$(database)/documents/restaurants/$(rid)/tables/$(d.tableNumber)).data.guestUid==request.auth.uid)
+       && (d.orderId==null || (get(/databases/$(database)/documents/restaurants/$(rid)/orders/$(d.orderId)).data.guestUid==request.auth.uid && get(/databases/$(database)/documents/restaurants/$(rid)/orders/$(d.orderId)).data.status=='pending'));
+    }
+    allow create: if validRequest();
+    allow update: if (owner(rid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status=='done')
+       || (resource.data.status=='done' && validRequest());
+    allow delete: if false;
+   }
+   match /serviceLocks/{id} {
+    allow get: if signed();
+    allow list: if owner(rid);
+    allow create: if guest() && request.resource.data.keys().hasOnly(['guestUid','requestId'])
+      && request.resource.data.guestUid==request.auth.uid
+      && id==getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(request.resource.data.requestId)).data.tableNumber+'_'+getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(request.resource.data.requestId)).data.featureId
+      && getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(request.resource.data.requestId)).data.guestUid==request.auth.uid
+      && getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(request.resource.data.requestId)).data.createdAt==request.time;
+    allow update: if false;
+    allow delete: if owner(rid);
+   }
+   match /notifications/{id} {
+    allow read: if owner(rid);
+    function linked() {
+     let d=request.resource.data;
+     return d.type=='request'
+       ? getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(d.requestId)).data.guestUid==request.auth.uid
+         && getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(d.requestId)).data.createdAt==request.time
+         && getAfter(/databases/$(database)/documents/restaurants/$(rid)/requests/$(d.requestId)).data.tableNumber==d.tableNumber
+       : getAfter(/databases/$(database)/documents/restaurants/$(rid)/orders/$(d.orderId)).data.guestUid==request.auth.uid
+         && getAfter(/databases/$(database)/documents/restaurants/$(rid)/orders/$(d.orderId)).data.updatedAt==request.time
+         && getAfter(/databases/$(database)/documents/restaurants/$(rid)/orders/$(d.orderId)).data.tableNumber==d.tableNumber;
+    }
+    allow create: if guest() && request.resource.data.keys().hasOnly(['type','requestId','orderId','guestUid','tableNumber','message','read','createdAt'])
+      && request.resource.data.guestUid==request.auth.uid && request.resource.data.type in ['new_order','items_added','request']
+      && request.resource.data.read==false && request.resource.data.createdAt==request.time
+      && request.resource.data.message is string && request.resource.data.message.size()<=150 && linked();
+    allow update: if owner(rid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) && request.resource.data.read is bool;
+    allow delete: if owner(rid);
+   }
+  }
+ }
+}
