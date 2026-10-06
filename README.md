@@ -1,3 +1,7 @@
+# Staff-approved table update
+
+See **UPDATE-GUIDE.md** for the current table approval workflow and upgrade steps. Guests now enter only a table number; staff approval is mandatory. Add tables in the admin Tables tab before admitting new guests.
+
 # ScanDine
 
 React + TypeScript + Vite restaurant menu and table-service application. Uses HashRouter, react-hot-toast, Firebase Email/Password Authentication, anonymous guest authentication, and Cloud Firestore. No Firebase Storage, Cloud Messaging, or Cloud Functions are used.
@@ -34,11 +38,11 @@ These console settings and rules have not been applied to your cloud project aut
 
 ## Guest workflow
 
-Visit `#/r/RESTAURANT_ID` or `#/r/RESTAURANT_ID?table=5`. Hidden anonymous authentication keeps orders private. A separate session-based visitor auth instance allows an owner to preview the menu without logging out of the dashboard. Use one browser tab/session for a dining party; another device cannot take over an active table order.
+Visit `#/r/RESTAURANT_ID` or `#/r/RESTAURANT_ID?table=5`. Hidden anonymous authentication keeps orders private. A separate session-based visitor auth instance allows an owner to preview the menu without logging out of the dashboard. Use one approved browser session for a dining party; another device cannot take over an active table session.
 
-Enter a table, filter/search dishes, review the cart, place an order, then add more items. Up to eight distinct dishes can be submitted at once; repeat submissions add more. Each quantity is capped at 99, and an order is capped at 200 lines. Staff closes the table manually after payment. Currency is INR, with no tax or payment integration. Guests cannot cancel submitted items.
+Enter a table and request staff approval, then filter/search dishes, review the cart, place an order, then add more items. Up to six distinct dishes can be submitted at once; repeat submissions add more. Each quantity is capped at 99, and an order is capped at 200 lines. Staff closes the table manually after payment. Currency is INR, with no tax or payment integration. Guests cannot cancel submitted items.
 
-Services can be requested before ordering. A table/service lock prevents duplicate open requests across devices. Staff can resolve these in the Requests waiting section even if no order exists. Guest buttons reset when staff marks a request done.
+Services can be requested after approval, even before ordering. A table/service lock prevents duplicate open requests across devices. Staff can resolve these in the Requests waiting section even if no order exists. Guest buttons reset when staff marks a request done.
 
 ## Images
 
@@ -46,9 +50,9 @@ Use publicly accessible HTTPS image URLs for logos, banners, and menu images. Ba
 
 ## Security and data
 
-Public restaurant/menu/category reads; owner-only administrative writes. Guests query only their own orders and requests. Notification history is owner-only. Atomic table locks enforce one active order per table. Rules validate new line prices/names/types against the menu, quantities, additive totals, immutable historical lines, timestamps, and enabled services. Notification creation must accompany the corresponding order/request update. Minimal table/service lock records are readable to signed-in clients so transactions can detect occupancy; order contents are private.
+Public restaurant/menu/category reads; owner-only administrative writes. Guests query only their own orders and requests. Notification history is owner-only. Staff approval and atomic occupancy records enforce one active dining session and order per table. Rules validate new line prices/names/types against the menu, quantities, additive totals, immutable historical lines, timestamps, and enabled services. Notification creation must accompany the corresponding order, service request, join request, or conflict record. Minimal tableOccupancy/service lock records are readable to signed-in clients so transactions can detect occupancy; table session details and order contents are private.
 
-The rules are supplied for deployment and should be validated with Firebase Emulator Suite before production. Anonymous authentication and duplicate-request locks are not comprehensive abuse protection: the public menu is reachable outside the restaurant. Add App Check or a trusted backend for stronger abuse controls if needed.
+The rules are supplied for deployment; tests/firestore.rules-check.mjs contains the Firebase Emulator Suite checks. Anonymous authentication and duplicate-request locks are not comprehensive abuse protection: the public menu is reachable outside the restaurant. Add App Check or a trusted backend for stronger abuse controls if needed.
 
 ## Build, tests, and deployment
 
@@ -57,7 +61,7 @@ npm run test
 npm run build
 ```
 
-The order lifecycle tests use an isolated transaction mock, covering initial orders, add-ons, another-device refusal, reuse of a completed table, and submission limits. They do not replace emulator tests of the supplied rules or live Firebase integration tests.
+The order lifecycle tests use an isolated transaction mock, covering approval, initial orders, add-ons, conflicts, reset, completion, stale sessions, and submission limits. They do not replace emulator tests of the supplied rules or live Firebase integration tests.
 
 Vite writes `dist`, which fixes the previous deployment-folder mismatch. HashRouter and relative asset paths support GitHub Pages subdirectories.
 
@@ -70,3 +74,17 @@ npm run deploy
 This publishes `dist` to the checkout's `gh-pages` branch. Set GitHub Settings → Pages → Deploy from a branch → `gh-pages` → `/ (root)`. The current generated project is not connected to a Git remote; configure a checkout before running deployment.
 
 Alternatively, after building, run `firebase deploy --only hosting` with the Firebase CLI. `firebase.json` and `.firebaserc` are included. No site has been published automatically.
+
+
+
+## Firestore emulator checks
+
+The rules checks run against `demo-scandine`, not the live restaurant project. For a local rules test, Java 21+ and the Firebase CLI are needed:
+
+```powershell
+npm install --save-dev @firebase/rules-unit-testing firebase-tools
+npx firebase emulators:exec --only firestore --project demo-scandine --config firebase.test.json "node tests/firestore.rules-check.mjs"
+```
+
+The normal app build needs neither Java nor the Firebase CLI. Do not use the emulator's demo project ID in your app `.env`.
+

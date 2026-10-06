@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { db } from "./firebase";
+import { assertTableAccess, type TableAccess } from "./tableAccess";
 export type Row = { id: string; [key: string]: any };
 export const path = (rid: string, name: string) => `restaurants/${rid}/${name}`;
 export function useRows(
@@ -93,15 +94,17 @@ export async function placeOrder(
   uid: string,
   table: string,
   items: any[],
+  access: TableAccess,
 ) {
   const lock = doc(database, path(rid, "tables"), table),
     fresh = doc(collection(database, path(rid, "orders"))),
     notification = doc(collection(database, path(rid, "notifications")));
-  if (items.length > 8)
+  if (items.length > 6)
     throw Error(
-      "Please order up to 8 different dishes at a time. You can add more afterward.",
+      "Please order up to 6 different dishes at a time. You can add more afterward.",
     );
   await runTransaction(database, async (tx) => {
+    await assertTableAccess(tx, database, rid, uid, table, access);
     const ls = await tx.get(lock);
     if (ls.exists() && ls.data().guestUid !== uid)
       throw Error(
@@ -126,6 +129,7 @@ export async function placeOrder(
     tx.set(ref, {
       tableNumber: table,
       guestUid: uid,
+      sessionId: access.sessionId,
       status: "pending",
       items: all,
       addedItems: lines,
@@ -133,7 +137,7 @@ export async function placeOrder(
       createdAt: addon ? old.createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    tx.set(lock, { orderId: ref.id, guestUid: uid });
+    tx.update(lock, { orderId: ref.id });
     tx.set(notification, {
       type: addon ? "items_added" : "new_order",
       orderId: ref.id,

@@ -1460,3 +1460,29 @@ fieldset {
     left: 50px;
   }
 }
+.table-join-form {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
+}
+.table-join-form > button {
+  width: auto;
+  margin-top: 10px;
+}
+.table-join-form p,
+.table-help {
+  font-size: 12px;
+  margin-top: 14px;
+}
+.table-verified {
+  padding: 17px 0;
+  color: var(--green);
+  font-weight: 600;
+}
+@media (max-width: 700px) {
+  .sidebar .nav {
+    padding: 12px 14px;
+  }
+  .table-join-form input {
+    font-size: 16px;
+  }
+}

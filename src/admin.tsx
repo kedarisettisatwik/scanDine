@@ -31,6 +31,7 @@ import {
   type Row,
 } from "./data";
 import { useOwner, attempt } from "./App";
+import { releaseTable } from "./tableAccess";
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div className="empty">
@@ -252,50 +253,18 @@ export function OrderDetail() {
   async function close() {
     if (!window.confirm("Close this table after payment?")) return;
     setBusy(true);
-    await attempt(async () => {
-      await runTransaction(db, async (tx) => {
-        const orderRef = doc(db, path(u.uid, "orders"), order!.id);
-        const tableRef = doc(db, path(u.uid, "tables"), order!.tableNumber);
-        const fresh = await tx.get(orderRef);
-        const tableLock = await tx.get(tableRef);
-        if (fresh.data()?.status !== "pending")
-          throw Error(
-            "This table was already completed. Refresh the order list.",
-          );
-        const pending = req.filter((r) => r.status === "open");
-        const snapshots = await Promise.all(
-          pending.map(async (r) => {
-            const ref = doc(db, path(u.uid, "requests"), r.id);
-            const lock = doc(
-              db,
-              path(u.uid, "serviceLocks"),
-              r.tableNumber + "_" + r.featureId,
-            );
-            return {
-              r,
-              ref,
-              lock,
-              request: await tx.get(ref),
-              service: await tx.get(lock),
-            };
-          }),
-        );
-        tx.update(orderRef, {
-          status: "completed",
-          updatedAt: serverTimestamp(),
-        });
-        if (tableLock.data()?.orderId === order!.id) tx.delete(tableRef);
-        snapshots.forEach(({ r, ref, lock, request, service }) => {
-          if (
-            request.data()?.status === "open" &&
-            millis(request.data()?.createdAt) === millis(r.createdAt)
-          ) {
-            tx.update(ref, { status: "done" });
-            if (service.data()?.requestId === r.id) tx.delete(lock);
-          }
-        });
-      });
-    }, "Table completed");
+    await attempt(
+      () =>
+        releaseTable(
+          db,
+          u.uid,
+          order!.tableNumber,
+          order!.sessionId,
+          requests,
+          order!.id,
+        ),
+      "Table completed and released",
+    );
     setBusy(false);
   }
   return (
@@ -304,7 +273,10 @@ export function OrderDetail() {
       <div className="detail-grid">
         <section className="panel">
           <div className="section-title">
-            <h2>Table {order.tableNumber}</h2>
+            <div>
+              <h2>Table {order.tableNumber}</h2>
+              <p>Order #{order.id.slice(-8).toUpperCase()}</p>
+            </div>
             <span className={`badge ${order.status}`}>{order.status}</span>
           </div>
           {order.items.map((i: any, index: number) => (
@@ -435,6 +407,10 @@ export function Notifications() {
                 Table {n.tableNumber} — {n.message}
               </strong>
               <p>{date(n.createdAt)}</p>
+              {(n.type === "table_conflict" || n.type === "table_join") && (
+                <Link to="/admin/tables">Open Tables →</Link>
+              )}
+
               {n.orderId && (
                 <Link to={`/admin/orders/${n.orderId}`}>View order →</Link>
               )}

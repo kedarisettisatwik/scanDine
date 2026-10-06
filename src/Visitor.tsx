@@ -26,6 +26,14 @@ import {
   type Row,
 } from "./data";
 import { attempt } from "./App";
+import {
+  joinTable,
+  useJoinRequest,
+  useTableOccupancy,
+  sessionIsCurrent,
+  assertTableAccess,
+  type TableAccess,
+} from "./tableAccess";
 function Gallery({
   images,
   name,
@@ -116,6 +124,71 @@ export default function Visitor() {
     [cart, setCart] = useState<Record<string, number>>({}),
     [cartOpen, setCartOpen] = useState(false),
     [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false),
+    [access, setAccess] = useState<TableAccess | null>(() => {
+      try {
+        return JSON.parse(sessionStorage.getItem(`access-${rid}`) || "null");
+      } catch {
+        return null;
+      }
+    });
+  const {
+    occupancy,
+    loading: tableLoading,
+    error: tableError,
+  } = useTableOccupancy(guestDb, rid, table, uid);
+  const verified =
+    !!access &&
+    access.tableNumber === table &&
+    sessionIsCurrent(occupancy, access, uid);
+  const joinRequest = useJoinRequest(guestDb, rid, table, uid);
+  const awaitingApproval =
+    !!access &&
+    !verified &&
+    joinRequest?.sessionId === access.sessionId &&
+    joinRequest.status === "pending";
+  useEffect(() => {
+    if (
+      access &&
+      joinRequest?.sessionId === access.sessionId &&
+      joinRequest.status === "rejected"
+    ) {
+      setAccess(null);
+      sessionStorage.removeItem(`access-${rid}`);
+      toast.error(
+        "The staff declined this table request. Please speak to them.",
+      );
+    }
+  }, [access, joinRequest, rid]);
+  const wasVerified = useRef(false);
+  useEffect(() => {
+    if (tableLoading) return;
+    if (wasVerified.current && !verified) {
+      setAccess(null);
+      setCart({});
+      setCartOpen(false);
+      sessionStorage.removeItem(`access-${rid}`);
+      toast(
+        "Your dining session has ended or the table was reset. Please join again.",
+        { icon: "🔒" },
+      );
+    }
+    wasVerified.current = verified;
+  }, [verified, tableLoading, rid]);
+  async function unlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!uid)
+      return toast.error(
+        "Guest connection is not ready. Please refresh and try again.",
+      );
+    setVerifying(true);
+    await attempt(async () => {
+      const next = await joinTable(guestDb, rid!, uid, table);
+      setAccess(next);
+      sessionStorage.setItem(`access-${rid}`, JSON.stringify(next));
+    }, "Table request sent. Please wait for staff approval.");
+    setVerifying(false);
+  }
   const orders = useRows(uid ? rid : undefined, "orders", guestDb, [
       where("guestUid", "==", uid),
     ]),
@@ -169,13 +242,17 @@ export default function Visitor() {
     }));
   }
   async function order() {
+    if (!verified || !access)
+      return toast.error(
+        "Enter your table number and request staff approval first",
+      );
     if (!table.trim()) return toast.error("Please enter your table number");
     if (!uid) return toast.error("Connecting your session. Please try again.");
     if (!selected.length) return;
     setBusy(true);
     await attempt(
       async () => {
-        await placeOrder(guestDb, rid!, uid, table, selected);
+        await placeOrder(guestDb, rid!, uid, table, selected, access);
         setCart({});
         setCartOpen(false);
       },
@@ -186,6 +263,10 @@ export default function Visitor() {
     setBusy(false);
   }
   async function request(f: any) {
+    if (!verified || !access)
+      return toast.error(
+        "Enter your table number and request staff approval first",
+      );
     if (!table.trim()) return toast.error("Please enter your table number");
     if (!uid) return toast.error("Connecting your session. Please try again.");
     setBusy(true);
@@ -198,6 +279,7 @@ export default function Visitor() {
         lock = doc(guestDb, path(rid!, "serviceLocks"), `${table}_${f.id}`),
         n = doc(collection(guestDb, path(rid!, "notifications")));
       await runTransaction(guestDb, async (tx) => {
+        await assertTableAccess(tx, guestDb, rid!, uid, table, access);
         const lockSnap = await tx.get(lock);
         if (lockSnap.exists())
           throw Error("This request is already with the staff");
@@ -207,6 +289,7 @@ export default function Visitor() {
         tx.set(ref, {
           orderId: current?.id || null,
           guestUid: uid,
+          sessionId: access.sessionId,
           tableNumber: table,
           featureId: f.id,
           featureIcon: f.icon,
@@ -278,11 +361,39 @@ export default function Visitor() {
             placeholder="e.g. 05"
             value={table}
             maxLength={12}
-            onChange={(e) =>
-              setTable(e.target.value.replace(/[^a-zA-Z0-9-]/g, ""))
-            }
+            onChange={(e) => {
+              wasVerified.current = false;
+              setTable(e.target.value.replace(/[^a-zA-Z0-9-]/g, ""));
+              setAccess(null);
+              sessionStorage.removeItem(`access-${rid}`);
+            }}
           />
         </label>
+        <form className="table-join-form" onSubmit={unlock}>
+          {verified ? (
+            <div className="table-verified">
+              ✓ Table {table} approved · Ready to order
+            </div>
+          ) : (
+            <>
+              <button
+                disabled={verifying || !uid || !table || awaitingApproval}
+              >
+                {verifying
+                  ? "Sending…"
+                  : awaitingApproval
+                    ? "Waiting for staff approval…"
+                    : "Request table approval"}
+              </button>
+              <p>
+                {awaitingApproval
+                  ? "Your request has been sent. Staff will confirm your table shortly."
+                  : "Enter your table number and ask the staff to approve your dining session."}
+              </p>
+            </>
+          )}
+          {tableError && <div className="error">{tableError}</div>}
+        </form>
         {authError && (
           <div className="error">Guest connection failed: {authError}</div>
         )}
@@ -431,7 +542,7 @@ export default function Visitor() {
                 return (
                   <button
                     className={pending ? "service requested" : "service"}
-                    disabled={busy || pending}
+                    disabled={busy || pending || !verified}
                     onClick={() => request(f)}
                     key={f.id}
                   >
@@ -497,7 +608,15 @@ export default function Visitor() {
                 it.
               </p>
             )}
-            <button disabled={busy || !quantity || !uid} onClick={order}>
+            {!verified && (
+              <p>
+                Please request staff approval for your table before ordering.
+              </p>
+            )}
+            <button
+              disabled={busy || !quantity || !uid || !verified}
+              onClick={order}
+            >
               {busy ? "Sending…" : current ? "Add to my order" : "Place order"}{" "}
               →
             </button>

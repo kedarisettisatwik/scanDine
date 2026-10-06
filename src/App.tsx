@@ -40,11 +40,13 @@ import {
   Settings,
   Volume2,
   LogOut,
+  Users,
 } from "lucide-react";
 import { auth, db } from "./firebase";
 import { features, useRows, useRestaurant, millis } from "./data";
 import { Orders, OrderDetail, Menu, Profile, Notifications } from "./admin";
 import Visitor from "./Visitor";
+import Tables from "./Tables";
 const AuthContext = createContext<User | null>(null);
 export const useOwner = () => useContext(AuthContext)!;
 export const attempt = async (fn: () => Promise<unknown>, success?: string) => {
@@ -95,6 +97,7 @@ export default function App() {
           <Route index element={<Orders />} />
           <Route path="orders/:orderId" element={<OrderDetail />} />
           <Route path="menu" element={<Menu />} />
+          <Route path="tables" element={<Tables />} />
           <Route path="profile" element={<Profile />} />
           <Route path="notifications" element={<Notifications />} />
         </Route>
@@ -352,15 +355,17 @@ function AdminShell() {
     }
   }
   const count = notifications.filter((n) => !n.read).length;
-  const title = location.pathname.includes("notifications")
-    ? "Notifications"
-    : location.pathname.includes("profile")
-      ? "Restaurant profile"
-      : location.pathname.includes("menu")
-        ? "Menu management"
-        : location.pathname.includes("/orders/")
-          ? "Order details"
-          : "Orders overview";
+  const title = location.pathname.includes("tables")
+    ? "Tables"
+    : location.pathname.includes("notifications")
+      ? "Notifications"
+      : location.pathname.includes("profile")
+        ? "Restaurant profile"
+        : location.pathname.includes("menu")
+          ? "Menu management"
+          : location.pathname.includes("/orders/")
+            ? "Order details"
+            : "Orders overview";
   return (
     <div className="dashboard">
       <aside className="sidebar">
@@ -373,6 +378,7 @@ function AdminShell() {
             label="Orders"
           />
           <Nav icon={<BookOpen size={19} />} to="/admin/menu" label="Menu" />
+          <Nav icon={<Users size={19} />} to="/admin/tables" label="Tables" />
           <Nav
             icon={<Settings size={19} />}
             to="/admin/profile"
